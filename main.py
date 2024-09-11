@@ -8,28 +8,33 @@ app = Flask(__name__)
 @app.route('/extract-text', methods=['POST'])
 def extract_text():
     data = request.get_json()
-    pdf_url = data.get('url')
+    urls = data.get('urls')
     
-    if not pdf_url:
-        return jsonify({"error": "No URL provided"}), 400
+    if not urls or not isinstance(urls, list):
+        return jsonify({"error": "No URLs provided or URLs are not in a list"}), 400
 
-    try:
-        response = requests.get(pdf_url)
-        response.raise_for_status()  # Raises stored HTTPError, if one occurred.
+    extracted_texts = []
+    errors = []
+
+    for url in urls:
+        try:
+            response = requests.get(url)
+            response.raise_for_status()  # Raises stored HTTPError, if one occurred.
+            
+            # Load PDF from in-memory bytes
+            with BytesIO(response.content) as pdf_file:
+                reader = PdfReader(pdf_file)
+                text = ''
+                for page in reader.pages:
+                    text += page.extract_text() + '\n'
+            extracted_texts.append({"url": url, "text": text})
         
-        # Load PDF from in-memory bytes
-        with BytesIO(response.content) as pdf_file:
-            reader = PdfReader(pdf_file)
-            text = ''
-            for page in reader.pages:
-                text += page.extract_text() + '\n'
-        
-        return jsonify({"extracted_text": text})
-    
-    except requests.RequestException as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": "Failed to process the PDF"}), 500
+        except requests.RequestException as e:
+            errors.append({"url": url, "error": str(e)})
+        except Exception as e:
+            errors.append({"url": url, "error": "Failed to process the PDF"})
+
+    return jsonify({"extracted_texts": extracted_texts, "errors": errors})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True,host='0.0.0.0', port=5000)
